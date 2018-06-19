@@ -34,11 +34,11 @@ namespace viasfora_metrics.Controllers {
         FeatureUsage = await GetFeatureUsage(),
         UsersPerHostVersion = await GetUsersPerHostVersion(),
       };
-      response.TotalUsers = response.UsersPerHostVersion.Sum(x => x.UserCount);
+      response.TotalUsers = response.UsersPerHostVersion.Values.Sum();
       return response;
     }
 
-    private async Task<IList<UserVersionCount>> GetUsersPerHostVersion() {
+    private async Task<Series> GetUsersPerHostVersion() {
       String query = 
 @"let version=(props : dynamic) {
     let hostVersion=tostring(props['HostVersion']);
@@ -50,24 +50,24 @@ customEvents
     | distinct user_Id, HostVersion
     | summarize UserCount=count() by HostVersion";
       var results = await queryRunner.Execute<String, int>(query);
-      return (from x in results
-        select new UserVersionCount {
-          HostVersion = x.Item1,
-          UserCount = x.Item2
-        }).ToList();
+      return results.Aggregate(new Series(), (ac, value) => {
+        ac.Labels.Add(value.Item1);
+        ac.Values.Add(value.Item2);
+        return ac;
+      });
     }
 
-    private async Task<IList<FeatureCount>> GetFeatureUsage() {
+    private async Task<Series> GetFeatureUsage() {
       String query = @"customEvents
         | where name startswith 'Feature' and customDimensions['enabled'] == 'True'
         | distinct name, user_Id
         | summarize UserCount=count(name) by name";
       var results = await queryRunner.Execute<String, int>(query);
-      return (from x in results
-        select new FeatureCount {
-          Feature = x.Item1,
-          UserCount = x.Item2
-        }).ToList();
+      return results.Aggregate(new Series(), (ac, value) => {
+        ac.Labels.Add(value.Item1);
+        ac.Values.Add(value.Item2);
+        return ac;
+      });
     }
   }
 }
